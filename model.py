@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.Functional as F
+import torch.nn.functional as F
 import math
 import numpy as np
 
@@ -38,20 +38,21 @@ class PositionalEmbedding(nn.Module):
         self.register_buffer("inp",inp)
 
     def forward(self,x):
-        x=x+self.inp[:,:x.shape[1]:].requires_grad(False)
+        x=x+self.inp[:,:x.size(1)].detach()
+        return self.dropout(x)
             
 
 class LayerNorm(nn.Module):
     def __init__(self,eps=10**-6):
         super().__init()
         self.eps=eps
-        self.alpha=nn.Parameter(nn.ones(1))
-        self.bias=nn.Parameter(nn.zeros(1))
+        self.alpha=nn.Parameter(torch.ones(1))
+        self.bias=nn.Parameter(torch.zeros(1))
     
     def forward(self,x):
         mean=x.mean(dim=-1,keepdim=True)
         deviation=x.std(dim=-1,keepdim=True)
-        return self.alpha*(x-mean)/math.sqrt(deviation+self.eps)+self.bias
+        return self.alpha*(x-mean)/(deviation+self.eps)+self.bias
 
 #this is to connect the layers  
 class FeedForward(nn.Module):
@@ -93,36 +94,37 @@ class MHA(nn.Module):
             mask: Optional mask to prevent attention to certain positions
         """
         self.d_k=query.size(-1)
-        self.score=torch.matmul(self.query,self.key.transpose(-2,-1)/math.sqrt(self.d_k))
-
-        
+        scores=torch.matmul(query,key.transpose(-2,-1))/math.sqrt(self.d_k)
         if mask is not None:
             scores=scores.masked_fill(mask==0,float('-inf'))
 
         attention_weights=F.softmax(scores,dim=-1)
-        return torch.matmul(attention_weights,self_value)
+        return torch.matmul(attention_weights,value)
 
 
     def forward(self,x,query,key,value,mask):
+        batch_size=query.size(0)
+        seq_len=query.size(1)
         self.query=self.w_q(query)#old dim: (batch,seq_len,dmodel)-> new dim: (batch,seq_len,dmodel) preserves 
-        self.key=self.w_k(key)
-        self.value=self.w_v(value)
+        key=self.w_k(key)
+        value=self.w_v(value)
         #the linear projections 
         query=self.w_q(query)#dim->(batch,seq_len,dmodel)
         key=self.w_k(key)
         value=self.w_v(value)
-        #splitting into heads by dmodel
-        Q=query.view(torch.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h))
-        #dimension->(batch,seq_len,num_heads,head_dim)
-        #eg->earlier dim->(32,20,512) new dim->(32,20,8,64)
-        K=key.view(torch.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h)).transpose(1,2)
-        V=value.view(torch.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h)).transpose(1,2)
+
+        '''splitting into heads by dmodel
+        dimension->(batch,seq_len,num_heads,head_dim)
+        eg->earlier dim->(32,20,512) new dim->(32,20,8,64)'''
+        
+        Q=query.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h)
+        K=key.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h).transpose(1,2)
+        V=value.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h).transpose(1,2)
         
         out=self.Attention(Q,K,V,mask)
         #now joining the heads
-        out=out.transpose(1,2).contiguous.view(batch,seq_len,self.dmodel)
+        out=out.transpose(1,2).contiguous.view(batch_size,seq_len,self.dmodel)
         return self.w_o(out)
-
 
 
 
