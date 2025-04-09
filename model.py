@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.Functional as F
 import math
 import numpy as np
 
@@ -68,16 +69,61 @@ class FeedForward(nn.Module):
 #now lets move on to the multi head attention
 class MHA(nn.Module):
     def __init__(self,dmodel,h,dropout):
+        super().__init__()
         self.h=h
         self.dmodel=dmodel
-        if(dmodel%h!=0){
+        if(dmodel%h!=0):
             print("d_model is not divisible by h")
-        }
-        self.d_k=self.model//h
-        self.d_v=self.model//h
-        self.d_q=self.model//h
+        
+        self.d_k=self.dmodel//h
+        self.d_v=self.dmodel//h
+        self.d_q=self.dmodel//h
         self.w_q=nn.Linear(dmodel,dmodel)
         self.w_k=nn.Linear(dmodel,dmodel)
         self.w_v=nn.Linear(dmodel,dmodel)
         self.w_o=nn.Linear(h*d_v,dmodel)
+        self.dropout=nn.Dropout(dropout)
+    
+    def Attention(self,query, key, value, mask=None):
+        """
+        Args:
+            query: (batch_size, num_heads, seq_len_q, d_k)
+            key: (batch_size, num_heads, seq_len_k, d_k)
+            value: (batch_size, num_heads, seq_len_v, d_v)
+            mask: Optional mask to prevent attention to certain positions
+        """
+        self.d_k=query.size(-1)
+        self.score=torch.matmul(self.query,self.key.transpose(-2,-1)/math.sqrt(self.d_k))
+
+        
+        if mask is not None:
+            scores=scores.masked_fill(mask==0,float('-inf'))
+
+        attention_weights=F.softmax(scores,dim=-1)
+        return torch.matmul(attention_weights,self_value)
+
+
+    def forward(self,x,query,key,value,mask):
+        self.query=self.w_q(query)#old dim: (batch,seq_len,dmodel)-> new dim: (batch,seq_len,dmodel) preserves 
+        self.key=self.w_k(key)
+        self.value=self.w_v(value)
+        #the linear projections 
+        query=self.w_q(query)#dim->(batch,seq_len,dmodel)
+        key=self.w_k(key)
+        value=self.w_v(value)
+        #splitting into heads by dmodel
+        Q=query.view(torch.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h))
+        #dimension->(batch,seq_len,num_heads,head_dim)
+        #eg->earlier dim->(32,20,512) new dim->(32,20,8,64)
+        K=key.view(torch.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h)).transpose(1,2)
+        V=value.view(torch.view(query.shape[0],query.shape[1],self.h,self.dmodel//self.h)).transpose(1,2)
+        
+        out=self.Attention(Q,K,V,mask)
+        #now joining the heads
+        out=out.transpose(1,2).contiguous.view(batch,seq_len,self.dmodel)
+        return self.w_o(out)
+
+
+
+
 
