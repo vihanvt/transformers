@@ -126,6 +126,14 @@ class MHA(nn.Module):
         out=out.transpose(1,2).contiguous.view(batch_size,seq_len,self.dmodel)
         return self.w_o(out)
 
+class Residual(nn.Module):
+    def __init__(self,dropout):
+        super().__init__()
+        self.dropout=nn.Dropout(dropout)
+        self.norm=LayerNorm()
+    
+    def forward():
 
+        
 
 
