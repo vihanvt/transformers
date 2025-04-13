@@ -1,6 +1,8 @@
 #implementing self attention to practice
 import torch
 import torch.nn as nn
+import math
+import torch.nn.functional as F
 print()
 print("-------Preprocessing starts------",end="\n\n")
 sentence="Life is short,eat shit first"
@@ -37,7 +39,6 @@ d_q,d_k,d_v=2,2,4
 w_q=torch.nn.Parameter(torch.rand(x_1.shape[0],d_q))
 w_k=torch.nn.Parameter(torch.rand(x_1.shape[0],d_k))
 w_v=torch.nn.Parameter(torch.rand(x_1.shape[0],d_v))
-
 q_1=torch.matmul(x_1,w_q)
 k_1=torch.matmul(x_1,w_k)
 v_1=torch.matmul(x_1,w_v)
@@ -63,4 +64,13 @@ print(values)
    W_v=(dmodel,dmodel)
    Q(query)=(seq,dmodel)'''
 
-#now lets calculate the attention 
+#lets do the attention part now
+#uneweighted part
+omega2_4=torch.matmul(q_1,keys.T)
+print(omega2_4)
+#weighted attention
+# omega2_4 = (q_1 . keys^T) → shape [6]
+d_k = k_1.shape[0]  # scalar = 2
+print("------This is the normalized attention matrix-------")
+attention_weights_2=F.softmax(omega2_4/math.sqrt(k_1.shape[0]),dim=0)
+print(attention_weights_2)
